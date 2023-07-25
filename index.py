@@ -1,14 +1,17 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
-from googletrans import Translator
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+import requests
 import speech_recognition as sr
-import json
+from googletrans import Translator
+from model import logaudio  
+from database import init_db
+from configs import config
 
-app = FastAPI()
+app =  FastAPI()
 translator = Translator()
 r = sr.Recognizer()
-hasil = "voice.wav"
 
+#  function 
 def request_audio(text):
     url = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/'
     params = {
@@ -21,21 +24,28 @@ def request_audio(text):
     }
 
     response = requests.get(url, params=params)
-    with open(hasil, 'wb') as file:
+    with open('voice.wav', 'wb') as file:
         file.write(response.content)
 
-@app.post("/voice/{language_used}")
-async def Translate(language_used: str, audio_file: UploadFile = File(...)):
-    audio = audio.file
-    with sr.AudioFile(audio) as audio_file:
-            audio_data = r.record(audio_file)
-            transcript = r.recognize_google(audio_data, language="id-ID")
-            
+@app.on_event("startup")
+async def startup_event():
+    init_db(app)
+
+@app.post("/change-voice/{language_used}")
+async def change(language_used: str, audio_file: UploadFile = File(...)):
+    with sr.AudioFile(audio_file.file) as audio_file:
+        audio_data = r.record(audio_file)
+        transcript = r.recognize_google(audio_data, language=language_used)
     translation = translator.translate(transcript, dest='ja')
     request_audio(text=translation.text)
-    result = {
-        "transcript": transcript,
-        "translation": translation.text
+    with open("voice.wav", "rb") as file:
+        audio_get = file.read()
+    save = logaudio(transcript=transcript, translate=translation.text, audio_file=audio_get)
+    await save.save()  
+    data = {
+        'transcript': transcript,
+        'translation': translation.text,
+        'id_audio': str(save.id)  
     }
-    return JSONResponse (result)
-    return FileResponse(hasil, media_type="audio/wav")
+
+    return JSONResponse(data)  
