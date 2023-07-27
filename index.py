@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 from fastapi.responses import JSONResponse
 import requests
 import speech_recognition as sr
@@ -49,3 +49,11 @@ async def change(language_used: str, audio_file: UploadFile = File(...)):
     }
 
     return JSONResponse(data)  
+
+@app.get("/get-audio/{audio_id}")
+async def get(audio_id: str):
+    data = await logaudio.get(id = audio_id)
+    if data:
+        return Response(content=data.audio_file, media_type="audio/wav")
+    else:
+        raise HTTPException(status_code=404, detail="Audio not found")
