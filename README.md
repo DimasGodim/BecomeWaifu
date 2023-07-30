@@ -1,5 +1,5 @@
-# Translate-Voice-API
-Project Translate Your Voice to Japanese Anime Girl (Become Waifu If Your Waifu Is Not Real) :)
+# BW Project(BecomeWaifu)
+Project Change Your Voice to Japanese Anime Girl (Become Waifu If Your Waifu Is Not Real) :)
 # SYARAT 
 1. api-key VoiceVox in (https://voicevox.su-shiki.com/su-shikiapis/)
 2. MySQL database
