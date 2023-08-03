@@ -7,3 +7,7 @@ SpeechRecognition
 pydantic==1.10.7
 googletrans==3.1.0a0
 python-multipart
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
