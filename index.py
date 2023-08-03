@@ -1,15 +1,31 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 import requests
+import os
 import speech_recognition as sr
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
 from googletrans import Translator
-from model import logaudio  
+from model import logaudio, userdata  
 from database import init_db
 from configs import config
 
+# deklarasi nilai
 app =  FastAPI()
 translator = Translator()
 r = sr.Recognizer()
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
+def credentials_to_dict(credentials):
+    return {
+        "token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "token_uri": credentials.token_uri,
+        "client_id": credentials.client_id,
+        "client_secret": credentials.client_secret,
+        "scopes": credentials.scopes,
+    }
 
 #  function 
 def request_audio(text):
@@ -57,3 +73,49 @@ async def get(audio_id: str):
         return Response(content=data.audio_file, media_type="audio/wav")
     else:
         raise HTTPException(status_code=404, detail="Audio not found")
+
+@app.get("/daftar")
+async def daftar():
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile']  
+    )
+    flow.redirect_uri = config.redirect_uri
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    return RedirectResponse(authorization_url)
+
+
+@app.get("/auth2callback")
+async def auth2callback(request: Request, state: str):
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile'],  
+        state=state
+    )
+    flow.redirect_uri = config.redirect_uri
+    authorization_response = str(request.url)
+    flow.fetch_token(authorization_response=authorization_response)
+    credentials = flow.credentials
+    creds = credentials_to_dict(credentials)
+
+    userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
+    user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {credentials.token}'})
+    user_info = user_info_response.json()
+    email = user_info.get("email")
+    nama = user_info.get("name")
+
+    existing_user = await userdata.filter(email=email).first()
+    if not existing_user:
+        save = userdata(nama=nama, email=email)
+        await save.save()
+    else:
+        return RedirectResponse (config.redirect_uri_complete)
+
+    return JSONResponse(creds)
+
+@app.get("/")
+async def root():
+    pass

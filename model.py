@@ -12,3 +12,14 @@ class logaudio(Model):
     
     def __str__(self):
         return self.id
+
+class userdata(Model):
+    id = fields.UUIDField(pk=True)
+    nama = fields.CharField(max_length=225)
+    email = fields.CharField(max_length=225)
+
+    class Meta:
+        table = "userdata"
+
+    def __str__(self):
+        return self.id
