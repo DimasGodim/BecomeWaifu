@@ -74,7 +74,7 @@ async def get(audio_id: str):
     else:
         raise HTTPException(status_code=404, detail="Audio not found")
 
-@app.get("/daftar")
+@app.get("/Register")
 async def daftar():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
@@ -86,7 +86,6 @@ async def daftar():
         include_granted_scopes='true'
     )
     return RedirectResponse(authorization_url)
-
 
 @app.get("/auth2callback")
 async def auth2callback(request: Request, state: str):
