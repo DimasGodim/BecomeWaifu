@@ -47,8 +47,8 @@ def request_audio(text):
 async def startup_event():
     init_db(app)
 
-@app.post("/change-voice/{language_used}")
-async def change(language_used: str, audio_file: UploadFile = File(...)):
+@app.post("/change-voice/{user_id}/{language_used}")
+async def change(user_id: str, language_used: str, audio_file: UploadFile = File(...)):
     with sr.AudioFile(audio_file.file) as audio_file:
         audio_data = r.record(audio_file)
         transcript = r.recognize_google(audio_data, language=language_used)
@@ -56,19 +56,19 @@ async def change(language_used: str, audio_file: UploadFile = File(...)):
     request_audio(text=translation.text)
     with open("voice.wav", "rb") as file:
         audio_get = file.read()
-    save = logaudio(transcript=transcript, translate=translation.text, audio_file=audio_get)
+    save = logaudio(user_id=user_id, transcript=transcript, translate=translation.text, audio_file=audio_get)
     await save.save()  
     data = {
         'transcript': transcript,
         'translation': translation.text,
-        'id_audio': str(save.id)  
+        'id_audio': str(save.audio_id)  
     }
 
     return JSONResponse(data)  
 
 @app.get("/get-audio/{audio_id}")
 async def get(audio_id: str):
-    data = await logaudio.get(id = audio_id)
+    data = await logaudio.get(audio_id = audio_id)
     if data:
         return Response(content=data.audio_file, media_type="audio/wav")
     else:
