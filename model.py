@@ -2,7 +2,7 @@ from tortoise.models import Model
 from tortoise import fields
 
 class logaudio(Model):
-    audio_id = fields.UUIDField(pk=True)
+    audio_id = fields.IntField(pk=True)
     user_id = fields.CharField(max_length=225)
     transcript = fields.CharField(max_length=225)
     translate = fields.CharField(max_length=225)

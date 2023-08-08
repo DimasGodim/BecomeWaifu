@@ -74,27 +74,40 @@ async def get(audio_id: str):
     else:
         raise HTTPException(status_code=404, detail="Audio not found")
 
-@app.get("/Register")
+@app.get("/register")
 async def daftar():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = config.redirect_uri
+    flow.redirect_uri = config.redirect_uri_register
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
     )
     return RedirectResponse(authorization_url)
 
-@app.get("/auth2callback")
+@app.get("/login")
+async def daftar():
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile']  
+    )
+    flow.redirect_uri = config.redirect_uri_login
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    return RedirectResponse(authorization_url)
+
+@app.get("/auth2callbackRegister")
 async def auth2callback(request: Request, state: str):
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = config.redirect_uri
+    flow.redirect_uri = config.redirect_uri_register
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -110,10 +123,34 @@ async def auth2callback(request: Request, state: str):
     if not existing_user:
         save = userdata(nama=nama, email=email)
         await save.save()
+        return JSONResponse(creds)
     else:
-        return RedirectResponse (config.redirect_uri_complete)
+        return RedirectResponse (config.redirect_uri_page_masuk)
+    
+@app.get("/auth2callbackLogin")
+async def auth2callback(request: Request, state: str):
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile'],  
+        state=state
+    )
+    flow.redirect_uri = config.redirect_uri_login
+    authorization_response = str(request.url)
+    flow.fetch_token(authorization_response=authorization_response)
+    credentials = flow.credentials
+    creds = credentials_to_dict(credentials)
 
-    return JSONResponse(creds)
+    userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
+    user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {credentials.token}'})
+    user_info = user_info_response.json()
+    email = user_info.get("email")
+    nama = user_info.get("name")
+
+    existing_user = await userdata.filter(email=email).first()
+    if not existing_user:
+        return RedirectResponse (config.redirect_uri_page_masuk)
+    else:
+        return JSONResponse(creds)
 
 @app.get("/")
 async def root():
