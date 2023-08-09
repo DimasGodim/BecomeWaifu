@@ -152,6 +152,57 @@ async def auth2callback(request: Request, state: str):
     else:
         return JSONResponse(creds)
 
+@app.get("/login-bw/{email}/{passowrd}")
+async def login_bw(email: str, password: str):
+    user = await userdata.filter(email=email).first()
+
+    if user: # cek apakah email ada atau tidak
+        if user.password is None: # email sudah pernah terdaftar melalui google auth namun belum pernah membuat akun BW
+            return RedirectResponse (config.redirect_uri_page_masuk)
+        else: # email tersebut telah terdaftar ke akun BecomeWaifu
+            user_id = str(user.user_id)
+            return JSONResponse (
+                {
+                    'email':email,
+                    'user_id':user_id,
+                    'pesan':'selamat datang'
+                }
+            )
+    else: # belum pernah daftar sama sekali
+        return RedirectResponse (config.redirect_uri_page_masuk)
+
+@app.get("/register-bw/{email}/{password}")
+async def create_acoount(email: str, password: str):
+    user = await userdata.filter(email=email).first()
+
+    if user: # cek apakah email ada atau tidak
+        if user.password is None: # email sudah pernah terdaftar melalui google auth namun belum pernah membuat akun BW
+            user.password = password
+            await user.save()
+            return JSONResponse(
+                {
+                    'email':email,
+                    'pesan':'akun sudah dibuat silahkan login'
+                })
+        else: # email tersebut telah terdafatr ke akun BecomeWaifu
+            return RedirectResponse (config.redirect_uri_page_masuk)
+    else: # belum pernah daftar sama sekali
+        new_user = userdata(email=email, password=password)
+        await new_user.save()
+        return JSONResponse(
+            {
+            'email':email,
+            'pesan':'akun sudah dibuat silahkan login'
+            }
+            )
+
 @app.get("/")
 async def root():
-    pass
+    return ("silahkan login atau regis terlebih dahulu")
+
+@app.get("/halaman-utama")
+async def halaman_utama(request: Request):
+    return ("selamat datang")
+
+# kekurangan simpan access_token ke session
+# tampilkan user_id dan tampilkan data milik user

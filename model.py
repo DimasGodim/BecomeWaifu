@@ -16,8 +16,9 @@ class logaudio(Model):
 
 class userdata(Model):
     user_id = fields.UUIDField(pk=True)
-    nama = fields.CharField(max_length=225)
+    nama = fields.CharField(max_length=225, null=True)
     email = fields.CharField(max_length=225)
+    password = fields.CharField(max_length=255, null=True)
 
     class Meta:
         table = "userdata"
