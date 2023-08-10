@@ -1,9 +1,9 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Request, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi_sessions import SessionCookie, SessionSettings
-import secrets
+from fastapi_sessions.frontends.implementations import SessionCookie, CookieParameters
 import requests
 import os
+from uuid import uuid4
 import speech_recognition as sr
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
@@ -11,16 +11,25 @@ from googletrans import Translator
 from model import logaudio, userdata  
 from database import init_db
 from configs import config
+from session_manager import SessionData, backend, verifier
+
 
 # deklarasi nilai
 app =  FastAPI()
 translator = Translator()
 r = sr.Recognizer()
-secret_key = secrets.token_urlsafe(32)
-session_settings = SessionSettings(secret_key=secret_key)
-session_cookie = SessionCookie(settings=session_settings)
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+cookie_params = CookieParameters()
+
+cookie = SessionCookie(
+    cookie_name="cookie",
+    identifier="general_verifier",
+    auto_error=True,
+    secret_key="DONOTUSE",
+    cookie_params=cookie_params,
+)
+
 
 def credentials_to_dict(credentials):
     return {
@@ -106,7 +115,7 @@ async def daftar():
     return RedirectResponse(authorization_url)
 
 @app.get("/auth2callbackRegister")
-async def auth2callback(request: Request, state: str, session: SessionCookie = Depends()):
+async def auth2callback(request: Request, state: str, response: Response):
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile'],  
@@ -116,8 +125,8 @@ async def auth2callback(request: Request, state: str, session: SessionCookie = D
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
-    session["access_token"] = credentials.token
     creds = credentials_to_dict(credentials)
+    access_token = creds['token']
 
     userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
     user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {credentials.token}'})
@@ -127,6 +136,10 @@ async def auth2callback(request: Request, state: str, session: SessionCookie = D
 
     existing_user = await userdata.filter(email=email).first()
     if not existing_user:
+        session = uuid4()
+        data = SessionData(access_token=access_token)
+        await backend.create(session, data)
+        cookie.attach_to_response(response, session)
         save = userdata(nama=nama, email=email)
         await save.save()
         return JSONResponse(creds)
@@ -134,7 +147,7 @@ async def auth2callback(request: Request, state: str, session: SessionCookie = D
         return RedirectResponse (config.redirect_uri_page_masuk)
     
 @app.get("/auth2callbackLogin")
-async def auth2callback(request: Request, state: str, session: SessionCookie = Depends()):
+async def auth2callback(request: Request, state: str, response: Response):
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile'],  
@@ -144,8 +157,8 @@ async def auth2callback(request: Request, state: str, session: SessionCookie = D
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
-    session["access_token"] = credentials.token
     creds = credentials_to_dict(credentials)
+    access_token = creds['token']
 
     userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
     user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {credentials.token}'})
@@ -157,14 +170,18 @@ async def auth2callback(request: Request, state: str, session: SessionCookie = D
     if not existing_user:
         return RedirectResponse (config.redirect_uri_page_masuk)
     else:
+        session = uuid4()
+        data = SessionData(access_token=access_token)
+        await backend.create(session, data)
+        cookie.attach_to_response(response, session)
         return JSONResponse(creds)
 
-@app.get("/login-bw/{email}/{password}")
+@app.get("/login-bw/{email}/{passowrd}")
 async def login_bw(email: str, password: str):
     user = await userdata.filter(email=email).first()
 
     if user: # cek apakah email ada atau tidak
-        if user.password is None: # email sudah pernah terdaftar melalui google auth namun belum pernah membuat akun BW
+        if user.akunbw is False: # email sudah pernah terdaftar akun BW
             return RedirectResponse (config.redirect_uri_page_masuk)
         else: # email tersebut telah terdaftar ke akun BecomeWaifu
             user_id = str(user.user_id)
@@ -179,38 +196,42 @@ async def login_bw(email: str, password: str):
         return RedirectResponse (config.redirect_uri_page_masuk)
 
 @app.get("/register-bw/{email}/{password}")
-async def create_acoount(email: str, password: str):
+async def create_account(email: str, password: str):
     user = await userdata.filter(email=email).first()
 
     if user: # cek apakah email ada atau tidak
         if user.password is None: # email sudah pernah terdaftar melalui google auth namun belum pernah membuat akun BW
+            user.akunbw = True
             user.password = password
-            user.akun_bw = True
             await user.save()
             return JSONResponse(
                 {
                     'email':email,
                     'pesan':'akun sudah dibuat silahkan login'
                 })
-        else: # email tersebut telah terdafatr ke akun BecomeWaifu
-            return RedirectResponse (config.redirect_uri_page_masuk)
+        else: # email tersebut telah terdaftar ke akun BecomeWaifu
+            return RedirectResponse(config.redirect_uri_page_masuk)
     else: # belum pernah daftar sama sekali
-        new_user = userdata(email=email, password=password, akun_bw=True)
+        new_user = userdata(email=email, password=password, akunbw=True)
         await new_user.save()
         return JSONResponse(
             {
             'email':email,
             'pesan':'akun sudah dibuat silahkan login'
             }
-            )
+        )
 
 @app.get("/")
 async def root():
     return ("silahkan login atau regis terlebih dahulu")
 
-@app.get("/halaman-utama")
-async def halaman_utama(request: Request):
-    return ("selamat datang")
+@app.get("/halaman-utama", dependencies=[Depends(cookie)])
+async def halaman_utama(request: Request, session_data: SessionData = Depends(verifier)):
+    return session_data
+
+@app.get("/whoami", dependencies=[Depends(cookie)])
+async def whoami(session_data: SessionData = Depends(verifier)):
+    return session_data
 
 # kekurangan simpan access_token ke session
 # tampilkan user_id dan tampilkan data milik user
