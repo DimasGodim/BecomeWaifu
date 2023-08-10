@@ -1,0 +1,4 @@
+env/**
+configs.py
+voice.wav
+__pycache__/**
