@@ -2,3 +2,4 @@ env/**
 configs.py
 voice.wav
 __pycache__/**
+test.py
