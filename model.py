@@ -18,8 +18,11 @@ class userdata(Model):
     user_id = fields.UUIDField(pk=True)
     nama = fields.CharField(max_length=225, null=True)
     email = fields.CharField(max_length=225)
-    akunbw = fields.BooleanField(default=False)
     password = fields.CharField(max_length=255, null=True)
+    akunbw = fields.BooleanField(default=False)
+    token = fields.CharField(max_length=225, null=True)
+    status = fields.BooleanField(default=False)
+    ban = fields.BooleanField(default=False)
 
     class Meta:
         table = "userdata"
