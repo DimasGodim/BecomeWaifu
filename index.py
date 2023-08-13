@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Request, Depends, Cookie
+from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from tortoise.exceptions import DoesNotExist
 import requests
@@ -11,7 +11,7 @@ from googletrans import Translator
 from model import logaudio, userdata  
 from database import init_db
 from configs import config
-from helper import request_audio, credentials_to_dict, TokenData
+from helper import request_audio, credentials_to_dict, user_response, pesan_response
 from send_email import send_email
 
 # deklarasi nilai
@@ -28,6 +28,14 @@ async def startup_event():
 
 @app.post("/change-voice/{user_id}/{language_used}")
 async def change(user_id: str, language_used: str, audio_file: UploadFile = File(...)):
+    user = await userdata.filter(user_id=user_id).exists()
+    if not user:
+        raise HTTPException(status_code=404, detail="Item not found")
+    user_data = await logaudio.filter(user_id=user_id).order_by("-audio_id").first()
+    if user_data:
+        audio_id = user_data.audio_id + 1
+    else:
+        audio_id = 1  
     with sr.AudioFile(audio_file.file) as audio_file:
         audio_data = r.record(audio_file)
         transcript = r.recognize_google(audio_data, language=language_used)
@@ -35,23 +43,26 @@ async def change(user_id: str, language_used: str, audio_file: UploadFile = File
     request_audio(text=translation.text)
     with open("voice.wav", "rb") as file:
         audio_get = file.read()
-    save = logaudio(user_id=user_id, transcript=transcript, translate=translation.text, audio_file=audio_get)
+    save = logaudio(audio_id=audio_id, user_id=user_id, transcript=transcript, translate=translation.text, audio_file=audio_get)
     await save.save()  
     data = {
+        'user_id': user_id,
+        'id_audio': audio_id,
         'transcript': transcript,
-        'translation': translation.text,
-        'id_audio': str(save.audio_id)  
+        'translation': translation.text 
     }
+    return JSONResponse(data)
 
-    return JSONResponse(data)  
-
-@app.get("/get-audio/{audio_id}")
-async def get(audio_id: str):
-    data = await logaudio.get(audio_id = audio_id)
-    if data:
-        return Response(content=data.audio_file, media_type="audio/wav")
-    else:
-        raise HTTPException(status_code=404, detail="Audio not found")
+@app.get("/get-audio/{user_id}/{audio_id}")
+async def get_audio(user_id: str, audio_id: int):
+    try:
+        audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
+        if audio_data:
+            return Response(content=audio_data.audio_file, media_type="audio/wav")
+        else:
+            raise HTTPException(status_code=404, detail="Audio not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/register")
 async def daftar():
@@ -102,7 +113,9 @@ async def auth2callback_register(request: Request, state: str):
     if not existing_user:
         save = userdata(nama=nama, email=email, status=True, token=access_token)
         await save.save()
-        return JSONResponse(content={"message": "Login successful", "access_token": access_token})
+        user = await userdata.filter(email=email).first()
+        response = user_response(user)
+        return JSONResponse(response)
     else:
         return RedirectResponse (config.redirect_uri_page_masuk)
     
@@ -129,7 +142,9 @@ async def auth2callback(request: Request, state: str):
     if not existing_user:
         return RedirectResponse(config.redirect_uri_page_masuk)
     else:
-        return JSONResponse(creds)
+        user = await userdata.filter(email=email).first()
+        response =user_response(user)
+        return JSONResponse(response)
         
 @app.get("/login-bw/{email}/{passowrd}")
 async def login_bw(email: str, password: str):
@@ -139,14 +154,8 @@ async def login_bw(email: str, password: str):
         if user.akunbw is False: # email sudah pernah terdaftar akun BW
             return RedirectResponse (config.redirect_uri_page_masuk)
         else: # email tersebut telah terdaftar ke akun BecomeWaifu
-            user_id = str(user.user_id)
-            return JSONResponse (
-                {
-                    'email':email,
-                    'user_id':user_id,
-                    'pesan':'selamat datang'
-                }
-            )
+            response = user_response(user)
+            return JSONResponse(response)
     else: # belum pernah daftar sama sekali
         return RedirectResponse (config.redirect_uri_page_masuk)
 
@@ -163,14 +172,16 @@ async def create_account(email: str):
                 user.token = token_konfirmasi
                 await user.save()
                 send_email(target_email=email, token=token_konfirmasi)
-                return ("token sudah dikirimkan")
+                response = pesan_response(email=email,pesan="token konfirmasi telah dikirimkan")
+                return JSONResponse(response)
             else: # email tersebut telah terdaftar ke akun BecomeWaifu
                 return RedirectResponse(config.redirect_uri_page_masuk)
     else: # belum pernah daftar sama sekali
         save = userdata(email=email, token=token_konfirmasi)
         await save.save()
         send_email(target_email=email, token=token_konfirmasi)
-        return ("token sudah dikirimkan")
+        response = pesan_response(email=email, pesan="token konfirmasi telah dikirimakan")
+        return JSONResponse(response)
 
 @app.post("/simpan-pengguna-bw")
 async def proses_pengguna(email: str, password: str, token: str):
@@ -185,24 +196,29 @@ async def proses_pengguna(email: str, password: str, token: str):
             user.akunbw = True  # Setel akunbw menjadi Aktif
             user.token = None  # Hapus token
             await user.save()
-            return ("akun bw sudah dibuat")
+            user_data = user_response(user)
+            return JSONResponse(user_data)
         else:
             # Akun pengguna aktif, update kata sandi dan akunbw
             user.password = password  # Setel kata sandi baru
             user.akunbw = True  # Setel akunbw menjadi Aktif
             user.token = None  # Hapus token
             await user.save()
-            return ("akun bw sudah dibuat")
+            user_data = user_response(user)
+            return JSONResponse(user_data)
     else:
         # Token tidak cocok dengan pengguna
         if user.status:
             # Akun pengguna aktif, hapus token
             user.token = None  # Hapus token
             await user.save()
+            user_data = user_response(user)
+            response = pesan_response(email=email, pesan="token konfirmasi yang anda masukan salah")
         else:
             # Akun pengguna tidak aktif, hapus data pengguna
             await user.delete()  # Hapus data pengguna
-
+            response = pesan_response(email=email, pesan="token konfirmasi yang anda masukan salah")
+            return JSONResponse(response)
 
 @app.get("/page-masuk")
 async def root(request: Request):
@@ -213,3 +229,27 @@ async def halaman_utama():
     return ("selamat datang")
 # kekurangan simpan access_token ke session
 # tampilkan user_id dan tampilkan data milik user
+
+# test endpoint
+@app.post("/add-audio/{user_id}")
+async def add_audio(user_id: str):
+    # Check if the user exists in userdata table
+    user_exists = await userdata.filter(user_id=user_id).exists()
+
+    if not user_exists:
+        return {"message": f"User with user_id {user_id} not found"}
+
+    existing_audio = await logaudio.filter(user_id=user_id).order_by("-audio_id").first()
+
+    if existing_audio:
+        new_audio_id = existing_audio.audio_id + 1
+    else:
+        new_audio_id = 1
+
+    new_audio = logaudio(audio_id=new_audio_id, user_id=user_id, transcript="yjtyjuj", translate="jytjytjytj", audio_file=b"")
+    await new_audio.save()
+    
+    return {"message": f"Audio with audio_id {new_audio_id} created for user_id {user_id}"}
+
+
+

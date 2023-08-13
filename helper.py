@@ -1,6 +1,7 @@
 import requests
 from configs import config
 from pydantic import BaseModel
+
 def request_audio(text):
     url = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/'
     params = {
@@ -25,6 +26,20 @@ def credentials_to_dict(credentials):
         "client_secret": credentials.client_secret,
         "scopes": credentials.scopes,
     }
+    
+def user_response(user):
+    return {
+        "user_id": str(user.user_id),
+        "nama": user.nama,
+        "email": user.email,
+        "password": user.password,
+        "akunbw": user.akunbw,
+        "token": str(user.token),
+        "status": user.status
+    }
 
-class TokenData(BaseModel):
-    access_token: str
+def pesan_response(email: str, pesan: str):
+    return {
+        'email':email,
+        'pesan':pesan
+    }
