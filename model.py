@@ -18,9 +18,10 @@ class userdata(Model):
     user_id = fields.UUIDField(pk=True)
     nama = fields.CharField(max_length=225, null=True)
     email = fields.CharField(max_length=225)
-    password = fields.CharField(max_length=255, null=True)
+    password = fields.BinaryField(max_length=225,null=True)
     akunbw = fields.BooleanField(default=False)
     token = fields.CharField(max_length=225, null=True)
+    waktu_basi = fields.DatetimeField(null=True)
     status = fields.BooleanField(default=False)
     ban = fields.BooleanField(default=False)
 

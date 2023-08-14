@@ -11,7 +11,7 @@ from googletrans import Translator
 from model import logaudio, userdata  
 from database import init_db
 from configs import config
-from helper import request_audio, credentials_to_dict, user_response, pesan_response
+from helper import request_audio, credentials_to_dict, user_response, pesan_response, set_password, check_password, create_token
 from send_email import send_email
 
 # deklarasi nilai
@@ -111,9 +111,10 @@ async def auth2callback_register(request: Request, state: str):
 
     existing_user = await userdata.filter(email=email).first()
     if not existing_user:
-        save = userdata(nama=nama, email=email, status=True, token=access_token)
+        save = userdata(nama=nama, email=email, status=True)
         await save.save()
         user = await userdata.filter(email=email).first()
+        await create_token(user)
         response = user_response(user)
         return JSONResponse(response)
     else:
@@ -143,18 +144,24 @@ async def auth2callback(request: Request, state: str):
         return RedirectResponse(config.redirect_uri_page_masuk)
     else:
         user = await userdata.filter(email=email).first()
+        await create_token(user)
         response =user_response(user)
         return JSONResponse(response)
         
 @app.get("/login-bw/{email}/{passowrd}")
 async def login_bw(email: str, password: str):
     user = await userdata.filter(email=email).first()
+    await create_token(user)
 
     if user: # cek apakah email ada atau tidak
+        if not check_password(password, user):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+
         if user.akunbw is False: # email sudah pernah terdaftar akun BW
             return RedirectResponse (config.redirect_uri_page_masuk)
         else: # email tersebut telah terdaftar ke akun BecomeWaifu
-            response = user_response(user)
+            response = user_response(user=user,password=password)
             return JSONResponse(response)
     else: # belum pernah daftar sama sekali
         return RedirectResponse (config.redirect_uri_page_masuk)
@@ -191,20 +198,20 @@ async def proses_pengguna(email: str, password: str, token: str):
         # Token cocok dengan pengguna
         if not user.status:
             # Akun pengguna tidak aktif
-            user.password = password  # Setel kata sandi baru
+            user.password = set_password(password=password) # Setel kata sandi baru
             user.status = True  # Setel status menjadi Aktif
             user.akunbw = True  # Setel akunbw menjadi Aktif
             user.token = None  # Hapus token
             await user.save()
-            user_data = user_response(user)
+            user_data = user_response(user=user,password=password)
             return JSONResponse(user_data)
         else:
             # Akun pengguna aktif, update kata sandi dan akunbw
-            user.password = password  # Setel kata sandi baru
+            user.password = set_password(password=password)  # Setel kata sandi baru
             user.akunbw = True  # Setel akunbw menjadi Aktif
             user.token = None  # Hapus token
             await user.save()
-            user_data = user_response(user)
+            user_data = user_response(user=user,password=password)
             return JSONResponse(user_data)
     else:
         # Token tidak cocok dengan pengguna
