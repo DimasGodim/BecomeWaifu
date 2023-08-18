@@ -70,3 +70,12 @@ async def create_token(user):
     user.token = token
     user.waktu_basi = waktu_basi
     await user.save()
+
+async def check_token_expired(user):
+    current_time = datetime.now()
+    if user.waktu_basi <= current_time:
+        user.token = None  
+        await user.save()
+        return True
+    else:
+        return False
