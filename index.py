@@ -4,6 +4,8 @@ from tortoise.exceptions import DoesNotExist
 import requests
 import secrets
 import os
+import tempfile
+from pydub import AudioSegment
 import speech_recognition as sr
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
@@ -27,27 +29,41 @@ async def startup_event():
 
 @app.post("/change-voice/{user_id}/{language_used}")
 async def change(user_id: str, language_used: str, audio_file: UploadFile = File(...)):
-    user = await userdata.filter(user_id=user_id).exists()
+    user = await userdata.filter(user_id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="user not found")
     is_expired = await check_token_expired(user)
     if is_expired:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
-    
+    if not user.premium:
+        user_audio_count = await logaudio.filter(user_id=user_id).count()
+        if user_audio_count >= 10:
+            response = pesan_response(email=user.email,pesan="logaudio data anda telah mencapai limit upgrade ke plan premium atau hapus logaudio")
+            return JSONResponse(response, status_code=400)
     user_data = await logaudio.filter(user_id=user_id).order_by("-audio_id").first()
     if user_data:
         audio_id = user_data.audio_id + 1
     else:
         audio_id = 1  
+    if audio_file.content_type not in ['audio/wav', 'audio/x-wav', 'audio/aiff', 'audio/x-aiff', 'audio/flac']:
+        temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        audio = AudioSegment.from_file(audio_file.file, format="mp3")  # Adjust format as needed
+        audio.export(temp_wav.name, format="wav")
+        audio_file = temp_wav
+    
     with sr.AudioFile(audio_file.file) as audio_file:
         audio_data = r.record(audio_file)
         transcript = r.recognize_google(audio_data, language=language_used)
+        
     translation = translator.translate(transcript, dest='ja')
     request_audio(text=translation.text)
+    
     with open("voice.wav", "rb") as file:
         audio_get = file.read()
+    
     save = logaudio(audio_id=audio_id, user_id=user_id, transcript=transcript, translate=translation.text, audio_file=audio_get)
     await save.save()  
+    
     data = {
         'user_id': user_id,
         'id_audio': audio_id,
@@ -58,7 +74,7 @@ async def change(user_id: str, language_used: str, audio_file: UploadFile = File
 
 @app.get("/get-audio/{user_id}/{audio_id}")
 async def get_audio(user_id: str, audio_id: int):
-    user = await userdata.filter(user_id=user_id).exists()
+    user = await userdata.filter(user_id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="user not found")
     is_expired = await check_token_expired(user)
@@ -76,7 +92,7 @@ async def get_audio(user_id: str, audio_id: int):
     
 @app.get("/get-all-audio-data/{user_id: str}")
 async def get_logaudio(user_id: str):
-    user = await userdata.filter(user_id=user_id).exists()
+    user = await userdata.filter(user_id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="user not found")
     is_expired = await check_token_expired(user)
@@ -98,6 +114,38 @@ async def get_logaudio(user_id: str):
         return JSONResponse(result, status_code=200)
     else:
         raise HTTPException(status_code=404, detail="No logaudio data found")
+
+@app.delete("/delete-audio/{user_id}/{audio_id}")
+async def delete_audio(user_id: str, audio_id: int):
+    user = await userdata.filter(user_id=user_id).first()
+    try:
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        is_expired = await check_token_expired(user)
+        if is_expired:
+            return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+        
+        audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
+        if audio_data:
+            await audio_data.delete()
+            
+            # Mengambil semua audio dengan user_id yang sama dan audio_id lebih besar dari yang dihapus
+            audio_to_update = await logaudio.filter(user_id=user_id, audio_id__gt=audio_id).all()
+            
+            # Mengupdate audio_id pada data yang lebih besar dari yang dihapus
+            for audio in audio_to_update:
+                audio.audio_id -= 1
+                await audio.save()
+            
+            return JSONResponse(content={"message": "Audio log deleted successfully"}, status_code=200)
+        else:
+            raise HTTPException(status_code=404, detail="Audio not found")
+    
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as err:
+        # Tangani eror lainnya dengan memberikan respons yang sesuai
+        return JSONResponse(content={"error": str(err)}, status_code=500)
 
 @app.get("/register")
 async def daftar():

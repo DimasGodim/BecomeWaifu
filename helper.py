@@ -3,6 +3,7 @@ from configs import config
 from pydantic import BaseModel
 import bcrypt
 import secrets
+import pytz
 from datetime import datetime, timedelta
 
 def request_audio(text):
@@ -66,15 +67,15 @@ def set_password(password: str):
 
 async def create_token(user):
     token = secrets.token_hex(16)
-    waktu_basi = datetime.now() + timedelta(hours=8)
+    waktu_basi = datetime.now(pytz.utc) + timedelta(hours=8)
     user.token = token
     user.waktu_basi = waktu_basi
     await user.save()
 
 async def check_token_expired(user):
-    current_time = datetime.now()
+    current_time = datetime.now(pytz.utc)
     if user.waktu_basi <= current_time:
-        user.token = None  
+        user.token = None
         await user.save()
         return True
     else:

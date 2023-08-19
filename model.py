@@ -19,6 +19,7 @@ class userdata(Model):
     nama = fields.CharField(max_length=225, null=True)
     email = fields.CharField(max_length=225)
     password = fields.BinaryField(max_length=225,null=True)
+    premium = fields.BooleanField(default=False)
     akunbw = fields.BooleanField(default=False)
     token = fields.CharField(max_length=225, null=True)
     waktu_basi = fields.DatetimeField(null=True)
