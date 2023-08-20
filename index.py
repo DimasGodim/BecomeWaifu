@@ -13,7 +13,7 @@ from googletrans import Translator
 from model import logaudio, userdata  
 from database import init_db
 from configs import config
-from helper import request_audio, credentials_to_dict, user_response, pesan_response, set_password, check_password, create_token, check_token_expired
+from helper import request_audio, credentials_to_dict, user_response, pesan_response, set_password, check_password, create_token, check_token_expired, check_premium
 from send_email import send_email
 
 # deklarasi nilai
@@ -27,19 +27,18 @@ os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 async def startup_event():
     init_db(app)
 
-@app.post("/change-voice/{user_id}/{language_used}")
-async def change(user_id: str, language_used: str, audio_file: UploadFile = File(...)):
+@app.post("/change-voice/{user_id}/{speaker_id}/{language_used}")
+async def change(user_id: str, speaker_id: int,language_used: str, audio_file: UploadFile = File(...)):
     user = await userdata.filter(user_id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="user not found")
     is_expired = await check_token_expired(user)
     if is_expired:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
-    if not user.premium:
-        user_audio_count = await logaudio.filter(user_id=user_id).count()
-        if user_audio_count >= 10:
-            response = pesan_response(email=user.email,pesan="logaudio data anda telah mencapai limit upgrade ke plan premium atau hapus logaudio")
-            return JSONResponse(response, status_code=400)
+    premium_response = await check_premium(user_id)
+    if premium_response:
+        return JSONResponse(premium_response, status_code=400)
+
     user_data = await logaudio.filter(user_id=user_id).order_by("-audio_id").first()
     if user_data:
         audio_id = user_data.audio_id + 1
@@ -56,7 +55,7 @@ async def change(user_id: str, language_used: str, audio_file: UploadFile = File
         transcript = r.recognize_google(audio_data, language=language_used)
         
     translation = translator.translate(transcript, dest='ja')
-    request_audio(text=translation.text)
+    request_audio(spaeker_id=speaker_id, text=translation.text)
     
     with open("voice.wav", "rb") as file:
         audio_get = file.read()

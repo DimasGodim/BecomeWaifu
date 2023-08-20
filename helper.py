@@ -5,12 +5,12 @@ import bcrypt
 import secrets
 import pytz
 from datetime import datetime, timedelta
-
-def request_audio(text):
+from model import logaudio, userdata
+def request_audio(text,spaeker_id:int):
     url = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/'
     params = {
         'key': config.api_key_voicevox,
-        'speaker': '0',
+        'speaker': spaeker_id,
         'pitch': '0',
         'intonationScale': '1',
         'speed': '1',
@@ -38,7 +38,7 @@ def user_response(user, password=None):
         "email": user.email,
         "akunbw": user.akunbw,
         "token": str(user.token),
-        "waktu_basi": str(user.waktu_basi),
+        "waktu_basi": str(user.waktu_basi_token),
         "status": user.status
     }
     
@@ -69,14 +69,29 @@ async def create_token(user):
     token = secrets.token_hex(16)
     waktu_basi = datetime.now(pytz.utc) + timedelta(hours=8)
     user.token = token
-    user.waktu_basi = waktu_basi
+    user.waktu_basi_token = waktu_basi
     await user.save()
 
 async def check_token_expired(user):
     current_time = datetime.now(pytz.utc)
-    if user.waktu_basi <= current_time:
+    if user.waktu_basi_token <= current_time:
         user.token = None
         await user.save()
         return True
     else:
         return False
+
+async def check_premium(user_id:str):
+    user = await userdata.filter(user_id=user_id).first()
+    if not user.premium:
+        user_audio_count = await logaudio.filter(user_id=user_id).count()
+        if user_audio_count >= 10:
+            response = pesan_response(email=user.email, pesan="logaudio data anda telah mencapai limit. Upgrade ke plan premium atau hapus logaudio.")
+            return response
+    else:
+        current_time = datetime.now()
+        if user.waktu_basi_premium and user.waktu_basi_premium <= current_time:
+            user.premium = False
+            await user.save()
+            response = pesan_response(email=user.email, pesan="Masa premium telah habis. Kembali ke versi gratis.")
+            return response
