@@ -5,7 +5,8 @@ import bcrypt
 import secrets
 import pytz
 from datetime import datetime, timedelta
-from model import logaudio, userdata
+from model import logaudio, userdata, access_token_data
+
 def request_audio(text,spaeker_id:int):
     url = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/'
     params = {
@@ -37,8 +38,6 @@ def user_response(user, password=None):
         "nama": user.nama,
         "email": user.email,
         "akunbw": user.akunbw,
-        "token": str(user.token),
-        "waktu_basi": str(user.waktu_basi_token),
         "status": user.status
     }
     
@@ -65,19 +64,22 @@ def set_password(password: str):
     hash = bcrypt.hashpw(bytes, salt)
     return hash
 
-async def create_token(user):
+async def create_access_token(user_id: str):
     token = secrets.token_hex(16)
     waktu_basi = datetime.now(pytz.utc) + timedelta(hours=8)
-    user.token = token
-    user.waktu_basi_token = waktu_basi
-    await user.save()
+    save = access_token_data(access_token=token, waktu_basi=waktu_basi, user_id=user_id)
+    await save.save()
 
-async def check_token_expired(user):
+async def check_access_token_expired(access_token: str):
     current_time = datetime.now(pytz.utc)
-    if user.waktu_basi_token <= current_time:
-        user.token = None
-        await user.save()
-        return True
+    data = await access_token_data.filter(access_token=access_token).first()
+    
+    if data:
+        if data.waktu_basi <= current_time:
+            await data.delete()
+            return True
+        else:
+            return data.user_id
     else:
         return False
 
@@ -95,3 +97,32 @@ async def check_premium(user_id:str):
             await user.save()
             response = pesan_response(email=user.email, pesan="Masa premium telah habis. Kembali ke versi gratis.")
             return response
+
+async def access_token_response(user, password=None):
+    user_id = user.user_id
+    data_list = await access_token_data.filter(user_id=user_id).all()
+    
+    if data_list:
+        response_list = []
+        for data in data_list:
+            response = {
+                'access_token': str(data.access_token),
+                'waktu_basi': str(data.waktu_basi),
+                'data_user': {
+                    "user_id": str(user.user_id),
+                    "nama": user.nama,
+                    "email": user.email,
+                    "akunbw": user.akunbw,
+                    "status": user.status
+                }
+            }
+            
+            if password is not None:
+                response['data_user']['password'] = password
+            
+            response_list.append(response)
+        
+        return response_list
+    else:
+        return None  
+

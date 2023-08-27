@@ -10,10 +10,10 @@ import speech_recognition as sr
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 from googletrans import Translator
-from model import logaudio, userdata  
+from model import logaudio, userdata
 from database import init_db
 from configs import config
-from helper import request_audio, credentials_to_dict, user_response, pesan_response, set_password, check_password, create_token, check_token_expired, check_premium
+from helper import request_audio, credentials_to_dict, user_response, pesan_response, set_password, check_password, create_access_token, check_access_token_expired, check_premium, access_token_response
 from send_email import send_email
 
 # deklarasi nilai
@@ -27,14 +27,16 @@ os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 async def startup_event():
     init_db(app)
 
-@app.post("/change-voice/{user_id}/{speaker_id}/{language_used}")
-async def change(user_id: str, speaker_id: int,language_used: str, audio_file: UploadFile = File(...)):
-    user = await userdata.filter(user_id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="user not found")
-    is_expired = await check_token_expired(user)
-    if is_expired:
+@app.post("/change-voice/{speaker_id}/{language_used}")
+async def change(speaker_id: int,language_used: str, access_token: str = Header(...), audio_file: UploadFile = File(...)):
+    result = await check_access_token_expired(access_token=access_token)
+    if result is True:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    elif result is False:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    else:
+        user_id = result
+        
     premium_response = await check_premium(user_id)
     if premium_response:
         return JSONResponse(premium_response, status_code=400)
@@ -71,14 +73,15 @@ async def change(user_id: str, speaker_id: int,language_used: str, audio_file: U
     }
     return JSONResponse(data, status_code=200)
 
-@app.get("/get-audio/{user_id}/{audio_id}")
-async def get_audio(user_id: str, audio_id: int):
-    user = await userdata.filter(user_id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="user not found")
-    is_expired = await check_token_expired(user)
-    if is_expired:
+@app.get("/get-audio/{audio_id}")
+async def get_audio(audio_id: int, access_token: str = Header(...)):
+    result = await check_access_token_expired(access_token=access_token)
+    if result is True:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    elif result is False:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    else:
+        user_id = result
     
     try:
         audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
@@ -89,14 +92,15 @@ async def get_audio(user_id: str, audio_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.get("/get-all-audio-data/{user_id: str}")
-async def get_logaudio(user_id: str):
-    user = await userdata.filter(user_id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="user not found")
-    is_expired = await check_token_expired(user)
-    if is_expired:
+@app.get("/get-all-audio-data")
+async def get_logaudio(access_token: str = Header(...)):
+    result = await check_access_token_expired(access_token=access_token)
+    if result is True:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    elif result is False:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    else:
+        user_id = result
     
     user_data = await logaudio.filter(user_id=user_id).all()
     if user_data:
@@ -114,23 +118,21 @@ async def get_logaudio(user_id: str):
     else:
         raise HTTPException(status_code=404, detail="No logaudio data found")
 
-@app.delete("/delete-audio/{user_id}/{audio_id}")
-async def delete_audio(user_id: str, audio_id: int):
-    user = await userdata.filter(user_id=user_id).first()
+@app.delete("/delete-audio/{audio_id}")
+async def delete_audio(audio_id: int, access_token: str = Header(...)):
+    result = await check_access_token_expired(access_token=access_token)
+    if result is True:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    elif result is False:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    else:
+        user_id = result
     try:
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        is_expired = await check_token_expired(user)
-        if is_expired:
-            return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
-        
         audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
         if audio_data:
             await audio_data.delete()
-            
             # Mengambil semua audio dengan user_id yang sama dan audio_id lebih besar dari yang dihapus
             audio_to_update = await logaudio.filter(user_id=user_id, audio_id__gt=audio_id).all()
-            
             # Mengupdate audio_id pada data yang lebih besar dari yang dihapus
             for audio in audio_to_update:
                 audio.audio_id -= 1
@@ -196,8 +198,8 @@ async def auth2callback_register(request: Request, state: str):
         save = userdata(nama=nama, email=email, status=True)
         await save.save()
         user = await userdata.filter(email=email).first()
-        await create_token(user)
-        response = user_response(user)
+        await create_access_token(user_id=user.user_id)
+        response = await access_token_response(user)
         return JSONResponse(response, status_code=201)
     else:
         return RedirectResponse (config.redirect_uri_page_masuk, status_code=403)
@@ -226,24 +228,23 @@ async def auth2callback(request: Request, state: str):
         return RedirectResponse(config.redirect_uri_page_masuk, status_code=405)
     else:
         user = await userdata.filter(email=email).first()
-        await create_token(user)
-        response =user_response(user)
+        await create_access_token(user_id= user.user_id)
+        response =await access_token_response(user)
         return JSONResponse(response, status_code=200)
         
-@app.get("/login-bw/{email}/{passowrd}")
+@app.get("/login-bw/{email}/{password}")
 async def login_bw(email: str, password: str):
     user = await userdata.filter(email=email).first()
-    await create_token(user)
+    await create_access_token(user_id = user.user_id)
 
     if user: # cek apakah email ada atau tidak
         if not check_password(password, user):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-
         if user.akunbw is False: # email belum terdaftar akun BW
             return RedirectResponse (config.redirect_uri_page_masuk, status_code=403)
         else: # email tersebut telah terdaftar ke akun BecomeWaifu
-            response = user_response(user=user,password=password)
+            response = await access_token_response(user=user,password=password)
             return JSONResponse(response, status_code=200)
     else: # belum pernah daftar sama sekali
         return RedirectResponse (config.redirect_uri_page_masuk, status_code=403)
@@ -259,7 +260,7 @@ async def create_account(email: str):
             return JSONResponse(pesan_response, status_code=403)
         else:
             if user.password is None: # email sudah pernah terdaftar melalui google auth namun belum pernah membuat akun BW
-                user.token = token_konfirmasi
+                user.token_konfirmasi = token_konfirmasi
                 await user.save()
                 send_email(target_email=email, token=token_konfirmasi)
                 response = pesan_response(email=email,pesan="token konfirmasi telah dikirimkan")
@@ -267,7 +268,7 @@ async def create_account(email: str):
             else: # email tersebut telah terdaftar ke akun BecomeWaifu
                 return RedirectResponse(config.redirect_uri_page_masuk, status_code=403)
     else: # belum pernah daftar sama sekali
-        save = userdata(email=email, token=token_konfirmasi)
+        save = userdata(email=email, token_konfirmasi=token_konfirmasi)
         await save.save()
         send_email(target_email=email, token=token_konfirmasi)
         response = pesan_response(email=email, pesan="token konfirmasi telah dikirimakan")
@@ -278,14 +279,14 @@ async def proses_pengguna(email: str, password: str, token: str):
     user = await userdata.filter(email=email).first()
         
     if user:
-        if user.token and user.token == token:
+        if user.token_konfirmasi and user.token_konfirmasi == token:
             # Token cocok dengan pengguna
             if not user.status:
                 # Akun pengguna tidak aktif
                 user.password = set_password(password=password)  # Setel kata sandi baru
                 user.status = True  # Setel status menjadi Aktif
                 user.akunbw = True  # Setel akunbw menjadi Aktif
-                user.token = None  # Hapus token
+                user.token_konfirmasi = None  # Hapus token
                 await user.save()
                 user_data = user_response(user=user, password=password)
                 return JSONResponse(user_data, status_code=201)
@@ -293,7 +294,7 @@ async def proses_pengguna(email: str, password: str, token: str):
                 # Akun pengguna aktif, update kata sandi dan akunbw
                 user.password = set_password(password=password)  # Setel kata sandi baru
                 user.akunbw = True  # Setel akunbw menjadi Aktif
-                user.token = None  # Hapus token
+                user.token_konfirmasi = None  # Hapus token
                 await user.save()
                 user_data = user_response(user=user, password=password)
                 return JSONResponse(user_data, status_code=201)
@@ -301,7 +302,7 @@ async def proses_pengguna(email: str, password: str, token: str):
             # Token tidak cocok dengan pengguna
             if user.status:
                 # Akun pengguna aktif, hapus token
-                user.token = None  # Hapus token
+                user.token_konfirmasi = None  # Hapus token
                 await user.save()
                 user_data = user_response(user=user)
                 response = pesan_response(email=email, pesan="token konfirmasi yang anda masukan salah")
@@ -323,3 +324,5 @@ async def root(request: Request):
 @app.get("/halaman-utama")
 async def halaman_utama():
     return ("selamat datang")
+
+# TODO: menambahkan level access dari access_token, menamabhkan tables untuk plan permium

@@ -22,8 +22,7 @@ class userdata(Model):
     akunbw = fields.BooleanField(default=False)
     premium = fields.BooleanField(default=False)
     waktu_basi_premium = fields.DatetimeField(null=True)
-    token = fields.CharField(max_length=225, null=True)
-    waktu_basi_token = fields.DatetimeField(null=True)
+    token_konfirmasi = fields.CharField(max_length=225, null=True)
     status = fields.BooleanField(default=False)
     ban = fields.BooleanField(default=False)
 
@@ -32,3 +31,14 @@ class userdata(Model):
 
     def __str__(self):
         return self.user_id
+
+class access_token_data(Model):
+    access_token = fields.UUIDField(pk=True)
+    waktu_basi = fields.DatetimeField()
+    user_id = fields.CharField(max_length=225)
+    
+    class Meta:
+        table = "access_token"
+        
+    def __str__(self):
+        return self.access_token
