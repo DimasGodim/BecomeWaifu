@@ -7,7 +7,7 @@ class Config(BaseSettings):
     redirect_uri_register: str = Field("")
     redirect_uri_login: str = Field("")
     redirect_uri_page_masuk: str = Field("")
-    password_email: str = Field("zgqpdsundqzzzcbq")
-    email: str = Field("dimas.ngadinegaran@gmail.com")
+    password_email: str = Field("")
+    email: str = Field("")
 
 config = Config()
