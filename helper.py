@@ -1,9 +1,13 @@
+from ast import pattern
 import requests
 from configs import config
 from pydantic import BaseModel
 import bcrypt
 import secrets
 import pytz
+import re
+import io
+from pydub import AudioSegment
 from datetime import datetime, timedelta
 from model import logaudio, userdata, access_token_data
 
@@ -66,7 +70,7 @@ def set_password(password: str):
 
 async def create_access_token(user_id: str):
     token = secrets.token_hex(16)
-    waktu_basi = datetime.now(pytz.utc) + timedelta(hours=8)
+    waktu_basi = datetime.now(pytz.utc) + timedelta(minutes=1)
     save = access_token_data(access_token=token, waktu_basi=waktu_basi, user_id=user_id)
     await save.save()
 
@@ -100,11 +104,21 @@ async def check_premium(user_id:str):
 
 async def access_token_response(user, password=None):
     user_id = user.user_id
-    data_list = await access_token_data.filter(user_id=user_id).all()
-    
-    if data_list:
+    access_tokens = await access_token_data.filter(user_id=user_id).all()
+    valid_access_tokens = []
+
+    for data in access_tokens:
+        is_valid = await check_access_token_expired(data.access_token)
+
+        if not is_valid:
+            continue
+
+        valid_access_tokens.append(data)
+
+    if valid_access_tokens:
         response_list = []
-        for data in data_list:
+
+        for data in valid_access_tokens:
             response = {
                 'access_token': str(data.access_token),
                 'waktu_basi': str(data.waktu_basi),
@@ -116,13 +130,25 @@ async def access_token_response(user, password=None):
                     "status": user.status
                 }
             }
-            
+
             if password is not None:
                 response['data_user']['password'] = password
-            
+
             response_list.append(response)
-        
+
         return response_list
     else:
-        return None  
+        return []
 
+def validation_email(email):
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    if re.match(pattern, email):
+        return True
+    else:
+        return False
+
+async def blob_to_wav(data_audio):
+    audio = AudioSegment.from_file(io.BytesIO(data_audio), format="wav")
+    output_file = 'voice.wav'
+    audio.export(output_file, format='wav')
