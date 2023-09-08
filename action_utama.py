@@ -1,6 +1,5 @@
-from urllib import response
-from fastapi import APIRouter, HTTPException, Header, UploadFile,File, Response
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Response
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 import tempfile
 from pydub import AudioSegment
 import speech_recognition as sr
@@ -60,8 +59,8 @@ async def change(speaker_id: int,language_used: str, access_token: str = Header(
     }
     return JSONResponse(data, status_code=200)
 
-@router.get("/get-audio/{audio_id}")
-async def get_audio(audio_id: int, access_token: str = Header(...)):
+@router.get("/get-audio-file/{audio_id}")
+async def get_audio_file(audio_id: int, access_token: str = Header(...)):
     result = await check_access_token_expired(access_token=access_token)
     if result is True:
         return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
@@ -82,7 +81,29 @@ async def get_audio(audio_id: int, access_token: str = Header(...)):
             return JSONResponse(response, status_code=404)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+@router.get("/get-audio-streming/{audio_id}")
+async def get_audio_streming(audio_id: int, access_token: str = Header(...)):
+    result = await check_access_token_expired(access_token=access_token)
+    if result is True:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    elif result is False:
+        return RedirectResponse(url=config.redirect_uri_page_masuk, status_code=401)
+    else:
+        user_id = result
+
+    try:
+        user = await userdata.filter(user_id=user_id).first()
+        audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
+        if audio_data:
+            await blob_to_wav(audio_data.audio_file)
+            return Response(content='voice.wav', media_type='audio/wav')
+        else:
+            response = pesan_response(email=user.email, pesan=f'audio data dengan log-audio {audio_id} tidak ditemukan')
+            return JSONResponse(response, status_code=404)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/get-all-audio-data")
 async def get_logaudio(access_token: str = Header(...)):
     result = await check_access_token_expired(access_token=access_token)
