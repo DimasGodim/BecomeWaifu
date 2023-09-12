@@ -75,7 +75,7 @@ async def get_audio_file(audio_id: int, access_token: str = Header(...)):
         if audio_data:
             await blob_to_wav(data_audio=audio_data.audio_file)
             audio_file = 'voice.wav'
-            return FileResponse(audio_file, media_type="audio/wav", filename='voice.wav', status_code=200)
+            return FileResponse(audio_file, media_type="audio/wav")
         else:
             response = pesan_response(email=user.email, pesan=f'audio data dengan log-audio {audio_id} tidak ditemukan')
             return JSONResponse(response, status_code=404)
@@ -96,8 +96,11 @@ async def get_audio_streming(audio_id: int, access_token: str = Header(...)):
         user = await userdata.filter(user_id=user_id).first()
         audio_data = await logaudio.filter(user_id=user_id, audio_id=audio_id).first()
         if audio_data:
-            await blob_to_wav(audio_data.audio_file)
-            return Response(content='voice.wav', media_type='audio/wav')
+            blob_to_wav(audio_data.audio_file)
+            def iterfile():  
+                with open('voice.wav', mode="rb") as file_like: 
+                    yield from file_like
+            return StreamingResponse(content=iterfile(), media_type='audio/wav')
         else:
             response = pesan_response(email=user.email, pesan=f'audio data dengan log-audio {audio_id} tidak ditemukan')
             return JSONResponse(response, status_code=404)

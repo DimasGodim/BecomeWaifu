@@ -70,7 +70,7 @@ def set_password(password: str):
 
 async def create_access_token(user_id: str):
     token = secrets.token_hex(16)
-    waktu_basi = datetime.now(pytz.utc) + timedelta(minutes=1)
+    waktu_basi = datetime.now(pytz.utc) + timedelta(hours=1)
     save = access_token_data(access_token=token, waktu_basi=waktu_basi, user_id=user_id)
     await save.save()
 
@@ -148,7 +148,7 @@ def validation_email(email):
     else:
         return False
 
-async def blob_to_wav(data_audio):
+def blob_to_wav(data_audio):
     audio = AudioSegment.from_file(io.BytesIO(data_audio), format="wav")
-    output_file = 'voice.wav'
+    output_file = config.output_file
     audio.export(output_file, format='wav')
